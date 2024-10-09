@@ -35,8 +35,10 @@
 #include <fstream>
 
 #include "base/projection.h"
+#include "base/sphere_camera.h"
 #include "base/triangulation.h"
 #include "estimators/pose.h"
+#include "estimators/utils.h"
 #include "util/bitmap.h"
 #include "util/misc.h"
 
@@ -325,16 +327,24 @@ bool IncrementalMapper::RegisterInitialImagePair(const Options& options,
         camera1.ImageToWorld(image1.Point2D(corr.point2D_idx1).XY());
     const Eigen::Vector2d point2_N =
         camera2.ImageToWorld(image2.Point2D(corr.point2D_idx2).XY());
-    const Eigen::Vector3d& xyz =
-        TriangulatePoint(proj_matrix1, proj_matrix2, point1_N, point2_N);
+    const Eigen::Vector3d& xyz = TriangulatePoint(
+        proj_matrix1, proj_matrix2, point1_N, point2_N, options.sphere_camera);
     const double tri_angle =
         CalculateTriangulationAngle(proj_center1, proj_center2, xyz);
-    if (tri_angle >= min_tri_angle_rad &&
-        HasPointPositiveDepth(proj_matrix1, xyz) &&
-        HasPointPositiveDepth(proj_matrix2, xyz)) {
-      track.Element(0).point2D_idx = corr.point2D_idx1;
-      track.Element(1).point2D_idx = corr.point2D_idx2;
-      reconstruction_->AddPoint3D(xyz, track);
+    if (tri_angle >= min_tri_angle_rad) {
+      bool cheirality = false;
+      if (options.sphere_camera) {
+        cheirality = HasPointPositiveDirection(proj_matrix1, xyz, point1_N) &&
+                     HasPointPositiveDirection(proj_matrix2, xyz, point2_N);
+      } else {
+        cheirality = HasPointPositiveDepth(proj_matrix1, xyz) &&
+                     HasPointPositiveDepth(proj_matrix2, xyz);
+      }
+      if (cheirality) {
+        track.Element(0).point2D_idx = corr.point2D_idx1;
+        track.Element(1).point2D_idx = corr.point2D_idx2;
+        reconstruction_->AddPoint3D(xyz, track);
+      }
     }
   }
 
@@ -378,7 +388,7 @@ bool IncrementalMapper::RegisterNextImage(const Options& options,
     const Point2D& point2D = image.Point2D(point2D_idx);
 
     corr_point3D_ids.clear();
-    for (const auto& corr :
+    for (const auto corr :
          correspondence_graph.FindCorrespondences(image_id, point2D_idx)) {
       const Image& corr_image = reconstruction_->Image(corr.image_id);
       if (!corr_image.IsRegistered()) {
@@ -437,7 +447,13 @@ bool IncrementalMapper::RegisterNextImage(const Options& options,
   abs_pose_options.num_focal_length_samples = 30;
   abs_pose_options.min_focal_length_ratio = options.min_focal_length_ratio;
   abs_pose_options.max_focal_length_ratio = options.max_focal_length_ratio;
-  abs_pose_options.ransac_options.max_error = options.abs_pose_max_error;
+  if (camera.IsSpherical()) {
+    // Normalize a given pixel error to the camera plane
+    abs_pose_options.ransac_options.max_error = ImagePlaneToSpherePlaneError(
+        camera.Width(), camera.Height(), options.abs_pose_max_error);
+  } else {
+    abs_pose_options.ransac_options.max_error = options.abs_pose_max_error;
+  }
   abs_pose_options.ransac_options.min_inlier_ratio =
       options.abs_pose_min_inlier_ratio;
   // Use high confidence to avoid preemptive termination of P3P RANSAC
@@ -1052,7 +1068,7 @@ std::vector<image_t> IncrementalMapper::FindLocalBundle(
       if (tri_angle < 0.0) {
         // Collect the commonly observed 3D points.
         shared_points3D.clear();
-        for (const Point2D& point2D : image.Points2D()) {
+        for (const Point2D& point2D : overlapping_image.Points2D()) {
           if (point2D.HasPoint3D() && point3D_ids.count(point2D.Point3DId())) {
             shared_points3D.push_back(
                 reconstruction_->Point3D(point2D.Point3DId()).XYZ());

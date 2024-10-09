@@ -1,127 +1,121 @@
-COLMAP
-======
+# SphereSfM
 
-About
------
+SphereSfM aims to achieve sparse reconstruction of spherical images in the ERP (EquiRectangular Projection) format based on increamental Structure from Motion. 
+Recently, Spherical images are gaining more and more attention due to the popularity of spherical cameras, such as Insta360 and Ricoh theta, and they have been exploited
+for 3D modeling in complex urban scenes, especially for near-ground buildings and streets. This project provides a software package for image orientation, which can be
+integrated into a SfM-MVS workflow.
 
-COLMAP is a general-purpose Structure-from-Motion (SfM) and Multi-View Stereo
-(MVS) pipeline with a graphical and command-line interface. It offers a wide
-range of features for reconstruction of ordered and unordered image collections.
-The software is licensed under the new BSD license. If you use this project for
-your research, please cite:
+![SphereSfM](https://github.com/json87/SphereSfM/blob/main/doc/spheresfm.jpg)
 
-    @inproceedings{schoenberger2016sfm,
-        author={Sch\"{o}nberger, Johannes Lutz and Frahm, Jan-Michael},
-        title={Structure-from-Motion Revisited},
-        booktitle={Conference on Computer Vision and Pattern Recognition (CVPR)},
-        year={2016},
-    }
+![sphere image](https://github.com/json87/SphereSfM/blob/main/doc/sphere%20image.jpg)
 
-    @inproceedings{schoenberger2016mvs,
-        author={Sch\"{o}nberger, Johannes Lutz and Zheng, Enliang and Pollefeys, Marc and Frahm, Jan-Michael},
-        title={Pixelwise View Selection for Unstructured Multi-View Stereo},
-        booktitle={European Conference on Computer Vision (ECCV)},
-        year={2016},
-    }
+## Build
 
-If you use the image retrieval / vocabulary tree engine, please also cite:
+The software package has been integrated into the well-known SfM engine [ColMap](https://github.com/colmap/colmap). Thus, you can build the code according to the [document](https://colmap.github.io/).
 
-    @inproceedings{schoenberger2016vote,
-        author={Sch\"{o}nberger, Johannes Lutz and Price, True and Sattler, Torsten and Frahm, Jan-Michael and Pollefeys, Marc},
-        title={A Vote-and-Verify Strategy for Fast Spatial Verification in Image Retrieval},
-        booktitle={Asian Conference on Computer Vision (ACCV)},
-        year={2016},
-    }
+## Dataset
 
-The latest source code is available at https://github.com/colmap/colmap. COLMAP
-builds on top of existing works and when using specific algorithms within
-COLMAP, please also cite the original authors, as specified in the source code.
+Three datasets that are recorded from different scenes are provided, including campus parterre ([google driver](https://drive.google.com/file/d/1KB1uk9wEUvEGVnFOwcrw4r_KxUk711eb/view?usp=drive_link), [baidu disk](https://pan.baidu.com/s/1C259Ygf_lJHd5iT-gmJWGA?pwd=5cqb)), campus building ([google driver](https://drive.google.com/file/d/17HfwXxuU-Q-tzZtlsroGa-ZibepAT0-a/view?usp=drive_link), [baidu disk](https://pan.baidu.com/s/1r_41WPs4R1wV2ow1rmgabw?pwd=olxy)), and urban street ([google driver](https://drive.google.com/file/d/1Tmm7_7153ybi1mhzGUe2L8j_r1ho-UJf/view?usp=drive_link), [baidu disk](https://pan.baidu.com/s/1YcNiCH7oWSA4EW_x5epAsQ?pwd=sis5)). 
 
+The illustration of the SfM reconstruction of urban street can be found [here](https://www.dropbox.com/s/pq8zv8hrljmbp6q/SphereSfM%2002.webm?dl=0).
 
-Download
---------
+## Usage
 
-Executables for Windows and Mac and other resources can be downloaded from
-https://demuc.de/colmap/. Executables for Linux/Unix/BSD are available at
-https://repology.org/metapackage/colmap/versions. To build COLMAP from source,
-please see https://colmap.github.io/install.html.
+There are two ways for data processing, i.e., GUI and command-line modes.
+The main steps of the command-line mode are described in the following 5 steps, which are also illustrated by the GUI setting.
 
-Getting Started
----------------
+### Step 1 - create a database
 
-1. Download the pre-built binaries from https://demuc.de/colmap/ or build the
-   library manually as described in the documentation.
-2. Download one of the provided datasets at https://demuc.de/colmap/datasets/
-   or use your own images.
-3. Use the **automatic reconstruction** to easily build models
-   with a single click or command.
+Create a database in the project directory [step1](https://github.com/json87/SphereSfM/blob/main/doc/step1.jpg).
 
+```sh
+colmap database_creator --database_path ./colmap/database.db
+```
 
-Documentation
--------------
+### Step 2 - feature extraction
 
-The documentation is available at https://colmap.github.io/.
+Extract features for all images. In this step, camera model, camera parameters, camera mask, and POS data can be provided [step2](https://github.com/json87/SphereSfM/blob/main/doc/step2.jpg).
 
+```sh
+colmap feature_extractor 
+--database_path ./colmap/database.db 
+--image_path ./images 
+--ImageReader.camera_model SPHERE 
+--ImageReader.camera_params "1,3520,1760" 
+--ImageReader.single_camera 1 
+--ImageReader.camera_mask_path ./camera_mask.png 
+--ImageReader.pose_path ./POS.txt
+```
 
-Support
--------
+### Step 3 - feature matching
 
-Please, use the COLMAP Google Group at
-https://groups.google.com/forum/#!forum/colmap (colmap@googlegroups.com) for
-questions and the GitHub issue tracker at https://github.com/colmap/colmap for
-bug reports, feature requests/additions, etc.
+Feature matching for all image pairs. When POS data is provides, spatial matching mode is prefered. Otherwise, the vocabulary tree-based mode can accelerate feature matching [step3](https://github.com/json87/SphereSfM/blob/main/doc/step3.jpg).
 
+```sh
+colmap spatial_matcher 
+--database_path ./colmap/database.db 
+--SiftMatching.max_error 4 
+--SiftMatching.min_num_inliers 50 
+--SpatialMatching.is_gps 0 
+--SpatialMatching.max_distance 50
+```
 
-Acknowledgments
----------------
+### Step 4 - mapper
 
-The library was written by Johannes L. Schönberger (https://demuc.de/). Funding
-was provided by his PhD advisors Jan-Michael Frahm (http://frahm.web.unc.edu/)
-and Marc Pollefeys (https://people.inf.ethz.ch/pomarc/).
+Sparse reconstruction based on increamental SfM. In this step, camera parameters are kept fixed [step4](https://github.com/json87/SphereSfM/blob/main/doc/step4.jpg).
 
+```sh
+colmap mapper 
+--database_path ./colmap/database.db 
+--image_path ./images 
+--output_path ./colmap/sparse 
+--Mapper.ba_refine_focal_length 0 
+--Mapper.ba_refine_principal_point 0 
+--Mapper.ba_refine_extra_params 0 
+--Mapper.sphere_camera 1
+```
 
-Contribution
-------------
+### Step 5 - show model
 
-Contributions (bug reports, bug fixes, improvements, etc.) are very welcome and
-should be submitted in the form of new issues and/or pull requests on GitHub.
+Show reconstructed models by using ColMap GUI.
 
+```sh
+colmap gui --database_path ./colmap1/database.db --image_path ./images --import_path ./colmap1/sparse/0
+```
 
-License
--------
+## Reference
 
-The COLMAP library is licensed under the new BSD license. Note that this text
-refers only to the license for COLMAP itself, independent of its dependencies,
-which are separately licensed. Building COLMAP with these dependencies may
-affect the resulting COLMAP license.
+Please refer to the following papers for the technique details.
 
-    Copyright (c) 2023, ETH Zurich and UNC Chapel Hill.
-    All rights reserved.
+```
+@article{
+  title = {3D reconstruction of spherical images: a review of techniques, applications, and prospects},
+  author = {Jiang, San and You, Kan and Li, Yaxin and Weng, Duojie and Chen, Wu},
+  journal = {Geo-spatial Information Science},
+  pages = {1--30},
+  year = {2024},
+  publisher = {Taylor & Francis}
+}
 
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are met:
+@article{
+  title = {3D reconstruction of spherical images based on incremental structure from motion},
+  author = {San Jiang, Kan You, Wu Chen, Duojie Weng and Yaxin Li},
+  journal = {International Journal of Remote Sensing},
+  volume = {45},
+  number = {8},
+  pages = {2596--2621},
+  year = {2024},
+  publisher = {Taylor & Francis}
+}
 
-        * Redistributions of source code must retain the above copyright
-          notice, this list of conditions and the following disclaimer.
-
-        * Redistributions in binary form must reproduce the above copyright
-          notice, this list of conditions and the following disclaimer in the
-          documentation and/or other materials provided with the distribution.
-
-        * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
-          its contributors may be used to endorse or promote products derived
-          from this software without specific prior written permission.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
-    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-    POSSIBILITY OF SUCH DAMAGE.
-
-    Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
+@article{
+  title = {Reliable Feature Matching for Spherical Images via Local Geometric Rectification and Learned Descriptor},
+  author = {Jiang, San and Liu, Junhuan and Li, Yaxin and Weng, Duojie and Chen, Wu},
+  journal = {Remote Sensing},
+  volume = {15},
+  number = {20},
+  pages = {4954},
+  year = {2023},
+  publisher = {MDPI}
+}
+```

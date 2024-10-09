@@ -38,6 +38,7 @@ namespace colmap {
 MapperGeneralOptionsWidget::MapperGeneralOptionsWidget(QWidget* parent,
                                                        OptionManager* options)
     : OptionsWidget(parent) {
+  AddOptionBool(&options->mapper->sphere_camera, "sphere_camera");
   AddOptionBool(&options->mapper->multiple_models, "multiple_models");
   AddOptionInt(&options->mapper->max_num_models, "max_num_models");
   AddOptionInt(&options->mapper->max_model_overlap, "max_model_overlap");

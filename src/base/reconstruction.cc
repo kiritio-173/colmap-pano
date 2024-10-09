@@ -37,6 +37,7 @@
 #include "base/gps.h"
 #include "base/pose.h"
 #include "base/projection.h"
+#include "base/sphere_camera.h"
 #include "base/triangulation.h"
 #include "util/bitmap.h"
 #include "util/misc.h"
@@ -544,8 +545,6 @@ bool Reconstruction::Merge(const Reconstruction& reconstruction,
   }
 
   FilterPoints3DWithLargeReprojectionError(max_reproj_error, Point3DIds());
-
-  return true;
 }
 
 const class Image* Reconstruction::FindImageWithName(
@@ -648,15 +647,24 @@ size_t Reconstruction::FilterObservationsWithNegativeDepth() {
   size_t num_filtered = 0;
   for (const auto image_id : reg_image_ids_) {
     const class Image& image = Image(image_id);
+    const class Camera& camera = Camera(image.CameraId());
     const Eigen::Matrix3x4d proj_matrix = image.ProjectionMatrix();
     for (point2D_t point2D_idx = 0; point2D_idx < image.NumPoints2D();
          ++point2D_idx) {
       const Point2D& point2D = image.Point2D(point2D_idx);
       if (point2D.HasPoint3D()) {
         const class Point3D& point3D = Point3D(point2D.Point3DId());
-        if (!HasPointPositiveDepth(proj_matrix, point3D.XYZ())) {
-          DeleteObservation(image_id, point2D_idx);
-          num_filtered += 1;
+        if (camera.IsSpherical()) {
+          if (!HasPointPositiveDirection(proj_matrix, point3D.XYZ(),
+                                         camera.ImageToWorld(point2D.XY()))) {
+            DeleteObservation(image_id, point2D_idx);
+            num_filtered += 1;
+          }
+        } else {
+          if (!HasPointPositiveDepth(proj_matrix, point3D.XYZ())) {
+            DeleteObservation(image_id, point2D_idx);
+            num_filtered += 1;
+          }
         }
       }
     }

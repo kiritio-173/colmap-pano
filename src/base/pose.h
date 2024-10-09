@@ -215,7 +215,8 @@ Eigen::Vector3d CalculateBaseline(const Eigen::Vector4d& qvec1,
 bool CheckCheirality(const Eigen::Matrix3d& R, const Eigen::Vector3d& t,
                      const std::vector<Eigen::Vector2d>& points1,
                      const std::vector<Eigen::Vector2d>& points2,
-                     std::vector<Eigen::Vector3d>* points3D);
+                     std::vector<Eigen::Vector3d>* points3D,
+                     const bool sphere_camera = false);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Implementation

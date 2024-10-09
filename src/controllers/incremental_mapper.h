@@ -136,6 +136,9 @@ struct IncrementalMapperOptions {
   // If reconstruction is provided as input, fix the existing image poses.
   bool fix_existing_images = false;
 
+  // Whether to process sphere cameras.
+  bool sphere_camera = false;
+
   IncrementalMapper::Options Mapper() const;
   IncrementalTriangulator::Options Triangulation() const;
   BundleAdjustmentOptions LocalBundleAdjustment() const;

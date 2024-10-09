@@ -225,7 +225,8 @@ Eigen::Vector3d CalculateBaseline(const Eigen::Vector4d& qvec1,
 bool CheckCheirality(const Eigen::Matrix3d& R, const Eigen::Vector3d& t,
                      const std::vector<Eigen::Vector2d>& points1,
                      const std::vector<Eigen::Vector2d>& points2,
-                     std::vector<Eigen::Vector3d>* points3D) {
+                     std::vector<Eigen::Vector3d>* points3D,
+                     const bool sphere_camera) {
   CHECK_EQ(points1.size(), points2.size());
   const Eigen::Matrix3x4d proj_matrix1 = Eigen::Matrix3x4d::Identity();
   const Eigen::Matrix3x4d proj_matrix2 = ComposeProjectionMatrix(R, t);
@@ -233,13 +234,20 @@ bool CheckCheirality(const Eigen::Matrix3d& R, const Eigen::Vector3d& t,
   const double max_depth = 1000.0f * (R.transpose() * t).norm();
   points3D->clear();
   for (size_t i = 0; i < points1.size(); ++i) {
-    const Eigen::Vector3d point3D =
-        TriangulatePoint(proj_matrix1, proj_matrix2, points1[i], points2[i]);
-    const double depth1 = CalculateDepth(proj_matrix1, point3D);
-    if (depth1 > kMinDepth && depth1 < max_depth) {
-      const double depth2 = CalculateDepth(proj_matrix2, point3D);
-      if (depth2 > kMinDepth && depth2 < max_depth) {
+    const Eigen::Vector3d point3D = TriangulatePoint(
+        proj_matrix1, proj_matrix2, points1[i], points2[i], sphere_camera);
+    if (sphere_camera) {
+      if (HasPointPositiveDirection(proj_matrix1, point3D, points1[i]) &&
+          HasPointPositiveDirection(proj_matrix2, point3D, points2[i])) {
         points3D->push_back(point3D);
+      }
+    } else {
+      const double depth1 = CalculateDepth(proj_matrix1, point3D);
+      if (depth1 > kMinDepth && depth1 < max_depth) {
+        const double depth2 = CalculateDepth(proj_matrix2, point3D);
+        if (depth2 > kMinDepth && depth2 < max_depth) {
+          points3D->push_back(point3D);
+        }
       }
     }
   }

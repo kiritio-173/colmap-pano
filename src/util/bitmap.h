@@ -172,6 +172,10 @@ class Bitmap {
   Bitmap CloneAsGrey() const;
   Bitmap CloneAsRGB() const;
 
+  Bitmap Copy(const int left, const int top, const int right,
+              const int bottom) const;
+  bool Paste(Bitmap& bitmap, const int left, const int top);
+
   // Clone metadata from this bitmap object to another target bitmap object.
   void CloneMetadata(Bitmap* target) const;
 

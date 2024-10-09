@@ -84,6 +84,9 @@ class IncrementalTriangulator {
     double max_focal_length_ratio = 10.0;
     double max_extra_param = 1.0;
 
+	// Whether to process sphere cameras.
+    bool sphere_camera = false;
+
     bool Check() const;
   };
 

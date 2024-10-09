@@ -119,6 +119,9 @@ class IncrementalMapper {
     // If reconstruction is provided as input, fix the existing image poses.
     bool fix_existing_images = false;
 
+	// Whether to process sphere cameras.
+    bool sphere_camera = false;
+
     // Number of threads.
     int num_threads = -1;
 

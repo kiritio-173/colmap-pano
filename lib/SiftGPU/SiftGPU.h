@@ -28,6 +28,8 @@
 #ifndef GPU_SIFT_H
 #define GPU_SIFT_H
 
+#include <cstddef>
+
 #if  defined(_WIN32)
 	#ifdef SIFTGPU_DLL
 		#ifdef DLL_EXPORT

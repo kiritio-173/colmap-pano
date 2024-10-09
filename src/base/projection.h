@@ -134,10 +134,12 @@ double CalculateAngularError(const Eigen::Vector2d& point2D,
 double CalculateNormalizedAngularError(const Eigen::Vector2d& point2D,
                                        const Eigen::Vector3d& point3D,
                                        const Eigen::Vector4d& qvec,
-                                       const Eigen::Vector3d& tvec);
+                                       const Eigen::Vector3d& tvec,
+                                       const bool sphere_camera = false);
 double CalculateNormalizedAngularError(const Eigen::Vector2d& point2D,
                                        const Eigen::Vector3d& point3D,
-                                       const Eigen::Matrix3x4d& proj_matrix);
+                                       const Eigen::Matrix3x4d& proj_matrix,
+                                       const bool sphere_camera = false);
 
 // Calculate depth of 3D point with respect to camera.
 //
@@ -161,6 +163,18 @@ double CalculateDepth(const Eigen::Matrix3x4d& proj_matrix,
 // @return                True if point lies in front of camera.
 bool HasPointPositiveDepth(const Eigen::Matrix3x4d& proj_matrix,
                            const Eigen::Vector3d& point3D);
+
+// Check if 3D point passes cheirality constraint for sphere camera.
+// i.e. it is consistent with the specified direction.
+//
+// @param proj_matrix     3x4 projection matrix.
+// @param point3D         3D point as 3x1 vector.
+// @param point2D         normalized 2D point as 2x1 vector.
+//
+// @return                True if point has consistent direction.
+bool HasPointPositiveDirection(const Eigen::Matrix3x4d& proj_matrix,
+                               const Eigen::Vector3d& point3D,
+                               const Eigen::Vector2d& point2D);
 
 }  // namespace colmap
 

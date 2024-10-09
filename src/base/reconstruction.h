@@ -252,7 +252,8 @@ class Reconstruction {
   size_t FilterAllPoints3D(const double max_reproj_error,
                            const double min_tri_angle);
 
-  // Filter observations that have negative depth.
+  // Filter observations that have negative direction for sphere cameras or
+  // negative depth for other cameras.
   //
   // @return    The number of filtered observations.
   size_t FilterObservationsWithNegativeDepth();

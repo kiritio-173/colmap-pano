@@ -50,11 +50,13 @@ COLMAP_ADD_SOURCES(
     point3d.h point3d.cc
     polynomial.h polynomial.cc
     pose.h pose.cc
+    pose_provider.h pose_provider.cc
     projection.h projection.cc
     reconstruction.h reconstruction.cc
     reconstruction_manager.h reconstruction_manager.cc
     scene_clustering.h scene_clustering.cc
     similarity_transform.h similarity_transform.cc
+    sphere_camera.h sphere_camera.cc
     track.h track.cc
     triangulation.h triangulation.cc
     undistortion.h undistortion.cc

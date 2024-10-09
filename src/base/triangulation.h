@@ -32,9 +32,8 @@
 #ifndef COLMAP_SRC_BASE_TRIANGULATION_H_
 #define COLMAP_SRC_BASE_TRIANGULATION_H_
 
-#include <vector>
-
 #include <Eigen/Core>
+#include <vector>
 
 #include "base/camera.h"
 #include "util/alignment.h"
@@ -58,14 +57,16 @@ namespace colmap {
 Eigen::Vector3d TriangulatePoint(const Eigen::Matrix3x4d& proj_matrix1,
                                  const Eigen::Matrix3x4d& proj_matrix2,
                                  const Eigen::Vector2d& point1,
-                                 const Eigen::Vector2d& point2);
+                                 const Eigen::Vector2d& point2,
+                                 const bool sphere_camera = false);
 
 // Triangulate multiple 3D points from multiple image correspondences.
 std::vector<Eigen::Vector3d> TriangulatePoints(
     const Eigen::Matrix3x4d& proj_matrix1,
     const Eigen::Matrix3x4d& proj_matrix2,
     const std::vector<Eigen::Vector2d>& points1,
-    const std::vector<Eigen::Vector2d>& points2);
+    const std::vector<Eigen::Vector2d>& points2,
+    const bool sphere_camera = false);
 
 // Triangulate point from multiple views minimizing the L2 error.
 //
@@ -75,7 +76,8 @@ std::vector<Eigen::Vector3d> TriangulatePoints(
 // @return                    Estimated 3D point.
 Eigen::Vector3d TriangulateMultiViewPoint(
     const std::vector<Eigen::Matrix3x4d>& proj_matrices,
-    const std::vector<Eigen::Vector2d>& points);
+    const std::vector<Eigen::Vector2d>& points,
+    const bool sphere_camera = false);
 
 // Triangulate optimal 3D point from corresponding image point observations by
 // finding the optimal image observations.
@@ -109,6 +111,7 @@ std::vector<Eigen::Vector3d> TriangulateOptimalPoints(
 double CalculateTriangulationAngle(const Eigen::Vector3d& proj_center1,
                                    const Eigen::Vector3d& proj_center2,
                                    const Eigen::Vector3d& point3D);
+
 std::vector<double> CalculateTriangulationAngles(
     const Eigen::Vector3d& proj_center1, const Eigen::Vector3d& proj_center2,
     const std::vector<Eigen::Vector3d>& points3D);

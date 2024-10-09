@@ -60,11 +60,14 @@ struct ImageReaderOptions {
   // of the images with respect to the image_path.
   std::vector<std::string> image_list;
 
+  // Path to pose file which contains pose information.
+  std::string pose_path = "";
+
   // Name of the camera model.
   std::string camera_model = "SIMPLE_RADIAL";
 
   // Whether to use the same camera for all images.
-  bool single_camera = false;
+  bool single_camera = true;
 
   // Whether to use the same camera for all images in the same sub-folder.
   bool single_camera_per_folder = false;

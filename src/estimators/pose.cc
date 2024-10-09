@@ -35,6 +35,7 @@
 #include "base/cost_functions.h"
 #include "base/essential_matrix.h"
 #include "base/pose.h"
+#include "base/sphere_camera.h"
 #include "estimators/absolute_pose.h"
 #include "estimators/essential_matrix.h"
 #include "optim/bundle_adjustment.h"
@@ -46,6 +47,12 @@ namespace colmap {
 namespace {
 
 typedef LORANSAC<P3PEstimator, EPNPEstimator> AbsolutePoseRANSAC;
+
+// SphericalEPNPEstimator has bugs now.
+// typedef LORANSAC<SphericalP3PEstimator, SphericalEPNPEstimator>
+//    SphericalAbsolutePoseRANSAC;
+typedef LORANSAC<SphericalP3PEstimator, SphericalP3PEstimator>
+    SphericalAbsolutePoseRANSAC;
 
 void EstimateAbsolutePoseKernel(const Camera& camera,
                                 const double focal_length_factor,
@@ -74,6 +81,34 @@ void EstimateAbsolutePoseKernel(const Camera& camera,
   *report = ransac.Estimate(points2D_N, points3D);
 }
 
+void EstimateSphericalAbsolutePoseKernel(
+    const Camera& camera, const double focal_length_factor,
+    const std::vector<Eigen::Vector2d>& points2D,
+    const std::vector<Eigen::Vector3d>& points3D, const RANSACOptions& options,
+    SphericalAbsolutePoseRANSAC::Report* report) {
+  // Scale the focal length by the given factor.
+  Camera scaled_camera = camera;
+  const std::vector<size_t>& focal_length_idxs = camera.FocalLengthIdxs();
+  for (const size_t idx : focal_length_idxs) {
+    scaled_camera.Params(idx) *= focal_length_factor;
+  }
+
+  // Normalize image coordinates with current camera hypothesis and
+  // convert normalized points to bearing vectors.
+  std::vector<Eigen::Vector3d> bearings3D(points2D.size());
+  for (size_t i = 0; i < points2D.size(); ++i) {
+    bearings3D[i] =
+        NormalizedPointToBearingVector(scaled_camera.ImageToWorld(points2D[i]));
+  }
+
+  // Estimate pose for given focal length.
+  auto custom_options = options;
+  custom_options.max_error =
+      scaled_camera.ImageToWorldThreshold(options.max_error);
+  SphericalAbsolutePoseRANSAC ransac(custom_options);
+  *report = ransac.Estimate(bearings3D, points3D);
+}
+
 }  // namespace
 
 bool EstimateAbsolutePose(const AbsolutePoseEstimationOptions& options,
@@ -82,6 +117,8 @@ bool EstimateAbsolutePose(const AbsolutePoseEstimationOptions& options,
                           Eigen::Vector4d* qvec, Eigen::Vector3d* tvec,
                           Camera* camera, size_t* num_inliers,
                           std::vector<char>* inlier_mask) {
+  CHECK_EQ(points2D.size(), points3D.size());
+
   options.Check();
 
   std::vector<double> focal_length_factors;
@@ -101,36 +138,63 @@ bool EstimateAbsolutePose(const AbsolutePoseEstimationOptions& options,
     focal_length_factors.push_back(1);
   }
 
-  std::vector<std::future<void>> futures;
-  futures.resize(focal_length_factors.size());
-  std::vector<typename AbsolutePoseRANSAC::Report,
-              Eigen::aligned_allocator<typename AbsolutePoseRANSAC::Report>>
-      reports;
-  reports.resize(focal_length_factors.size());
-
-  ThreadPool thread_pool(std::min(
-      options.num_threads, static_cast<int>(focal_length_factors.size())));
-
-  for (size_t i = 0; i < focal_length_factors.size(); ++i) {
-    futures[i] = thread_pool.AddTask(
-        EstimateAbsolutePoseKernel, *camera, focal_length_factors[i], points2D,
-        points3D, options.ransac_options, &reports[i]);
-  }
-
   double focal_length_factor = 0;
   Eigen::Matrix3x4d proj_matrix;
   *num_inliers = 0;
   inlier_mask->clear();
 
-  // Find best model among all focal lengths.
-  for (size_t i = 0; i < focal_length_factors.size(); ++i) {
-    futures[i].get();
-    const auto report = reports[i];
-    if (report.success && report.support.num_inliers > *num_inliers) {
-      *num_inliers = report.support.num_inliers;
-      proj_matrix = report.model;
-      *inlier_mask = report.inlier_mask;
-      focal_length_factor = focal_length_factors[i];
+  std::vector<std::future<void>> futures;
+  futures.resize(focal_length_factors.size());
+
+  ThreadPool thread_pool(std::min(
+      options.num_threads, static_cast<int>(focal_length_factors.size())));
+
+  if (camera->IsSpherical()) {
+    std::vector<
+        typename SphericalAbsolutePoseRANSAC::Report,
+        Eigen::aligned_allocator<typename SphericalAbsolutePoseRANSAC::Report>>
+        reports;
+    reports.resize(focal_length_factors.size());
+
+    for (size_t i = 0; i < focal_length_factors.size(); ++i) {
+      futures[i] = thread_pool.AddTask(
+          EstimateSphericalAbsolutePoseKernel, *camera, focal_length_factors[i],
+          points2D, points3D, options.ransac_options, &reports[i]);
+    }
+
+    // Find best model among all focal lengths.
+    for (size_t i = 0; i < focal_length_factors.size(); ++i) {
+      futures[i].get();
+      const auto report = reports[i];
+      if (report.success && report.support.num_inliers > *num_inliers) {
+        *num_inliers = report.support.num_inliers;
+        proj_matrix = report.model;
+        *inlier_mask = report.inlier_mask;
+        focal_length_factor = focal_length_factors[i];
+      }
+    }
+  } else {
+    std::vector<typename AbsolutePoseRANSAC::Report,
+                Eigen::aligned_allocator<typename AbsolutePoseRANSAC::Report>>
+        reports;
+    reports.resize(focal_length_factors.size());
+
+    for (size_t i = 0; i < focal_length_factors.size(); ++i) {
+      futures[i] = thread_pool.AddTask(
+          EstimateAbsolutePoseKernel, *camera, focal_length_factors[i],
+          points2D, points3D, options.ransac_options, &reports[i]);
+    }
+
+    // Find best model among all focal lengths.
+    for (size_t i = 0; i < focal_length_factors.size(); ++i) {
+      futures[i].get();
+      const auto report = reports[i];
+      if (report.success && report.support.num_inliers > *num_inliers) {
+        *num_inliers = report.support.num_inliers;
+        proj_matrix = report.model;
+        *inlier_mask = report.inlier_mask;
+        focal_length_factor = focal_length_factors[i];
+      }
     }
   }
 
@@ -158,22 +222,60 @@ bool EstimateAbsolutePose(const AbsolutePoseEstimationOptions& options,
 }
 
 size_t EstimateRelativePose(const RANSACOptions& ransac_options,
+                            const Camera& camera1,
                             const std::vector<Eigen::Vector2d>& points1,
+                            const Camera& camera2,
                             const std::vector<Eigen::Vector2d>& points2,
                             Eigen::Vector4d* qvec, Eigen::Vector3d* tvec) {
-  RANSAC<EssentialMatrixFivePointEstimator> ransac(ransac_options);
-  const auto report = ransac.Estimate(points1, points2);
+  CHECK_EQ(points1.size(), points2.size());
 
-  if (!report.success) {
-    return 0;
+  Eigen::Matrix3d M;
+  size_t num_inliers;
+  std::vector<char> inlier_mask;
+
+  const bool sphere_camera = camera1.IsSpherical() && camera2.IsSpherical();
+
+  if (sphere_camera) {
+    // Normalize image coordinates with camera and convert normalized points to
+    // bearing vectors.
+    std::vector<Eigen::Vector3d> bearing_vectors1(points1.size());
+    std::vector<Eigen::Vector3d> bearing_vectors2(points2.size());
+    for (size_t i = 0; i < points1.size(); ++i) {
+      bearing_vectors1[i] =
+          NormalizedPointToBearingVector(camera1.ImageToWorld(points1[i]));
+      bearing_vectors2[i] =
+          NormalizedPointToBearingVector(camera2.ImageToWorld(points2[i]));
+    }
+
+    RANSAC<SphericalEssentialMatrixEightPointEstimator> ransac(ransac_options);
+    const auto report = ransac.Estimate(bearing_vectors1, bearing_vectors2);
+
+    if (!report.success) {
+      return 0;
+    }
+
+    M = report.model;
+    num_inliers = report.support.num_inliers;
+    inlier_mask = report.inlier_mask;
+  } else {
+    RANSAC<EssentialMatrixFivePointEstimator> ransac(ransac_options);
+    const auto report = ransac.Estimate(points1, points2);
+
+    if (!report.success) {
+      return 0;
+    }
+
+    M = report.model;
+    num_inliers = report.support.num_inliers;
+    inlier_mask = report.inlier_mask;
   }
 
-  std::vector<Eigen::Vector2d> inliers1(report.support.num_inliers);
-  std::vector<Eigen::Vector2d> inliers2(report.support.num_inliers);
+  std::vector<Eigen::Vector2d> inliers1(num_inliers);
+  std::vector<Eigen::Vector2d> inliers2(num_inliers);
 
   size_t j = 0;
   for (size_t i = 0; i < points1.size(); ++i) {
-    if (report.inlier_mask[i]) {
+    if (inlier_mask[i]) {
       inliers1[j] = points1[i];
       inliers2[j] = points2[i];
       j += 1;
@@ -183,8 +285,8 @@ size_t EstimateRelativePose(const RANSACOptions& ransac_options,
   Eigen::Matrix3d R;
 
   std::vector<Eigen::Vector3d> points3D;
-  PoseFromEssentialMatrix(report.model, inliers1, inliers2, &R, tvec,
-                          &points3D);
+  PoseFromEssentialMatrix(M, inliers1, inliers2, &R, tvec, &points3D,
+                          sphere_camera);
 
   *qvec = RotationMatrixToQuaternion(R);
 
@@ -225,10 +327,16 @@ bool RefineAbsolutePose(const AbsolutePoseRefinementOptions& options,
     ceres::CostFunction* cost_function = nullptr;
 
     switch (camera->ModelId()) {
-#define CAMERA_MODEL_CASE(CameraModel)                                  \
-  case CameraModel::kModelId:                                           \
-    cost_function =                                                     \
-        BundleAdjustmentCostFunction<CameraModel>::Create(points2D[i]); \
+#define CAMERA_MODEL_CASE(CameraModel)                                    \
+  case CameraModel::kModelId:                                             \
+    if (camera->IsSpherical()) {                                          \
+      cost_function =                                                     \
+          SphericalBundleAdjustmentCostFunction<CameraModel>::Create(     \
+              points2D[i]);                                               \
+    } else {                                                              \
+      cost_function =                                                     \
+          BundleAdjustmentCostFunction<CameraModel>::Create(points2D[i]); \
+    }                                                                     \
     break;
 
       CAMERA_MODEL_SWITCH_CASES
@@ -324,7 +432,8 @@ bool RefineAbsolutePose(const AbsolutePoseRefinementOptions& options,
 bool RefineRelativePose(const ceres::Solver::Options& options,
                         const std::vector<Eigen::Vector2d>& points1,
                         const std::vector<Eigen::Vector2d>& points2,
-                        Eigen::Vector4d* qvec, Eigen::Vector3d* tvec) {
+                        Eigen::Vector4d* qvec, Eigen::Vector3d* tvec,
+                        const bool sphere_camera) {
   CHECK_EQ(points1.size(), points2.size());
 
   // CostFunction assumes unit quaternions.
@@ -335,11 +444,26 @@ bool RefineRelativePose(const ceres::Solver::Options& options,
 
   ceres::Problem problem;
 
-  for (size_t i = 0; i < points1.size(); ++i) {
-    ceres::CostFunction* cost_function =
-        RelativePoseCostFunction::Create(points1[i], points2[i]);
-    problem.AddResidualBlock(cost_function, loss_function, qvec->data(),
-                             tvec->data());
+  if (sphere_camera) {
+    // Convert normalized points to bearing vectors.
+    std::vector<Eigen::Vector3d> bearings1 =
+        NormalizedPointsToBearingVectors(points1);
+    std::vector<Eigen::Vector3d> bearings2 =
+        NormalizedPointsToBearingVectors(points2);
+
+    for (size_t i = 0; i < bearings1.size(); ++i) {
+      ceres::CostFunction* cost_function =
+          SphericalRelativePoseCostFunction::Create(bearings1[i], bearings2[i]);
+      problem.AddResidualBlock(cost_function, loss_function, qvec->data(),
+                               tvec->data());
+    }
+  } else {
+    for (size_t i = 0; i < points1.size(); ++i) {
+      ceres::CostFunction* cost_function =
+          RelativePoseCostFunction::Create(points1[i], points2[i]);
+      problem.AddResidualBlock(cost_function, loss_function, qvec->data(),
+                               tvec->data());
+    }
   }
 
   SetQuaternionManifold(&problem, qvec->data());

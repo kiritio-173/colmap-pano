@@ -74,6 +74,25 @@ void ComputeSquaredSampsonError(const std::vector<Eigen::Vector2d>& points1,
                                 const Eigen::Matrix3d& E,
                                 std::vector<double>* residuals);
 
+// Calculate the residuals of a set of corresponding points and a given
+// fundamental or essential matrix.
+//
+// Residuals are defined as the geodesic angular error.
+//
+// @param points1     First set of corresponding points as Nx3 matrix.
+// @param points2     Second set of corresponding points as Nx3 matrix.
+// @param E           3x3 fundamental or essential matrix.
+// @param residuals   Output vector of residuals.
+//
+// See:
+// Pagani A, Stricker D. Structure from motion using full spherical panoramic
+// cameras[C]. 2011 IEEE International Conference on Computer Vision Workshops
+// (ICCV Workshops). 2011: 375-382.
+void ComputeGeodesicAngularError(const std::vector<Eigen::Vector3d>& points1,
+                                 const std::vector<Eigen::Vector3d>& points2,
+                                 const Eigen::Matrix3d& E,
+                                 std::vector<double>* residuals);
+
 // Calculate the squared reprojection error given a set of 2D-3D point
 // correspondences and a projection matrix. Returns DBL_MAX if a 3D point is
 // behind the given camera.
@@ -84,6 +103,23 @@ void ComputeSquaredSampsonError(const std::vector<Eigen::Vector2d>& points1,
 // @param residuals     Output vector of residuals.
 void ComputeSquaredReprojectionError(
     const std::vector<Eigen::Vector2d>& points2D,
+    const std::vector<Eigen::Vector3d>& points3D,
+    const Eigen::Matrix3x4d& proj_matrix, std::vector<double>* residuals);
+
+// Calculate the geodesic reprojection error given a set of 3D-3D bearing
+// and point correspondences and a projection matrix.
+//
+// @param bearings3D    3D bearing points on the sphere.
+// @param points3D      3D world points.
+// @param proj_matrix   3x4 projection matrix.
+// @param residuals     Output vector of residuals.
+//
+// See:
+// Pagani A, Stricker D. Structure from motion using full spherical panoramic
+// cameras[C]. 2011 IEEE International Conference on Computer Vision Workshops
+// (ICCV Workshops). 2011: 375-382.
+void ComputeGeodesicReprojectionError(
+    const std::vector<Eigen::Vector3d>& bearings3D,
     const std::vector<Eigen::Vector3d>& points3D,
     const Eigen::Matrix3x4d& proj_matrix, std::vector<double>* residuals);
 

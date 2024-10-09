@@ -64,7 +64,8 @@ void PoseFromEssentialMatrix(const Eigen::Matrix3d& E,
                              const std::vector<Eigen::Vector2d>& points1,
                              const std::vector<Eigen::Vector2d>& points2,
                              Eigen::Matrix3d* R, Eigen::Vector3d* t,
-                             std::vector<Eigen::Vector3d>* points3D) {
+                             std::vector<Eigen::Vector3d>* points3D,
+                             const bool sphere_camera) {
   CHECK_EQ(points1.size(), points2.size());
 
   Eigen::Matrix3d R1;
@@ -78,7 +79,8 @@ void PoseFromEssentialMatrix(const Eigen::Matrix3d& E,
   points3D->clear();
   for (size_t i = 0; i < R_cmbs.size(); ++i) {
     std::vector<Eigen::Vector3d> points3D_cmb;
-    CheckCheirality(R_cmbs[i], t_cmbs[i], points1, points2, &points3D_cmb);
+    CheckCheirality(R_cmbs[i], t_cmbs[i], points1, points2, &points3D_cmb,
+                    sphere_camera);
     if (points3D_cmb.size() >= points3D->size()) {
       *R = R_cmbs[i];
       *t = t_cmbs[i];

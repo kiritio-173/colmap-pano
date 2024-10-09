@@ -415,7 +415,6 @@ void IncrementalTriangulator::ClearModifiedPoints3D() {
 void IncrementalTriangulator::ClearCaches() {
   camera_has_bogus_params_.clear();
   merge_trials_.clear();
-  found_corrs_.clear();
 }
 
 size_t IncrementalTriangulator::Find(const Options& options,
@@ -525,7 +524,7 @@ size_t IncrementalTriangulator::Create(
   Eigen::Vector3d xyz;
   std::vector<char> inlier_mask;
   if (!EstimateTriangulation(tri_options, point_data, pose_data, &inlier_mask,
-                             &xyz)) {
+                             &xyz, options.sphere_camera)) {
     return 0;
   }
 

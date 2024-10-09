@@ -60,6 +60,20 @@ void Camera::SetModelIdFromName(const std::string& model_name) {
   params_.resize(CameraModelNumParams(model_id_), 0);
 }
 
+CameraType Camera::ModelType() const { return kCameraType.at(model_id_); }
+
+bool Camera::IsPerspective() const {
+  return kCameraType.at(model_id_) == CameraType_PERSPECTIVE;
+}
+
+bool Camera::IsFisheye() const {
+  return kCameraType.at(model_id_) == CameraType_FISHEYE;
+}
+
+bool Camera::IsSpherical() const {
+  return kCameraType.at(model_id_) == CameraType_SPHERICAL;
+}
+
 const std::vector<size_t>& Camera::FocalLengthIdxs() const {
   return CameraModelFocalLengthIdxs(model_id_);
 }

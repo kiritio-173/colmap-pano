@@ -137,14 +137,18 @@ bool EstimateAbsolutePose(const AbsolutePoseEstimationOptions& options,
 //
 // @param ransac_options       RANSAC options.
 // @param points1              Corresponding 2D points.
+// @param camera1              Camera of the first 2D points.
 // @param points2              Corresponding 2D points.
+// @param camera2              Camera of the second 2D points.
 // @param qvec                 Estimated rotation component as
 //                             unit Quaternion coefficients (w, x, y, z).
 // @param tvec                 Estimated translation component.
 //
 // @return                     Number of RANSAC inliers.
 size_t EstimateRelativePose(const RANSACOptions& ransac_options,
+                            const Camera& camera1,
                             const std::vector<Eigen::Vector2d>& points1,
+                            const Camera& camera2,
                             const std::vector<Eigen::Vector2d>& points2,
                             Eigen::Vector4d* qvec, Eigen::Vector3d* tvec);
 
@@ -185,17 +189,19 @@ bool RefineAbsolutePose(const AbsolutePoseRefinementOptions& options,
 // the translation up to an unknown scale (i.e. refined translation vector
 // is a unit vector again).
 //
-// @param options          Solver options.
-// @param points1          First set of corresponding points.
-// @param points2          Second set of corresponding points.
-// @param qvec             Unit Quaternion rotation coefficients (w, x, y, z).
-// @param tvec             3x1 translation vector.
+// @param options				Solver options.
+// @param points1				First set of corresponding points.
+// @param points2				Second set of corresponding points.
+// @param qvec					Unit Quaternion rotation coefficients (w, x, y, z).
+// @param tvec					3x1 translation vector.
+// @param sphere_camera			Indicate whether it is sphere camera.
 //
 // @return                 Flag indicating if solution is usable.
 bool RefineRelativePose(const ceres::Solver::Options& options,
                         const std::vector<Eigen::Vector2d>& points1,
                         const std::vector<Eigen::Vector2d>& points2,
-                        Eigen::Vector4d* qvec, Eigen::Vector3d* tvec);
+                        Eigen::Vector4d* qvec, Eigen::Vector3d* tvec,
+                        const bool sphere_camera = false);
 
 // Refine generalized absolute pose (optionally focal lengths)
 // from 2D-3D correspondences.

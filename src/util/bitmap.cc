@@ -591,6 +591,23 @@ Bitmap Bitmap::CloneAsRGB() const {
   }
 }
 
+Bitmap Bitmap::Copy(const int left, const int top, const int right,
+                    const int bottom) const {
+  if (left < 0 || left >= width_ || top < 0 || top >= height_ || right <= 0 ||
+      right > width_ || bottom <= 0 || bottom > height_ || left >= right ||
+      top >= bottom) {
+    return Bitmap();
+  }
+  return Bitmap(FreeImage_Copy(data_.get(), left, top, right, bottom));
+}
+
+bool Bitmap::Paste(Bitmap& bitmap, const int left, const int top) {
+  if (left < 0 || left >= width_ || top < 0 || top >= height_) {
+    return false;
+  }
+  return FreeImage_Paste(data_.get(), bitmap.Data(), left, top, 255);
+}
+
 void Bitmap::CloneMetadata(Bitmap* target) const {
   CHECK_NOTNULL(target);
   CHECK_NOTNULL(target->Data());

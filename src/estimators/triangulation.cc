@@ -52,6 +52,10 @@ void TriangulationEstimator::SetResidualType(const ResidualType residual_type) {
   residual_type_ = residual_type;
 }
 
+void TriangulationEstimator::SetSphereCamera(const bool sphere_camera) {
+  sphere_camera_ = sphere_camera;
+}
+
 std::vector<TriangulationEstimator::M_t> TriangulationEstimator::Estimate(
     const std::vector<X_t>& point_data,
     const std::vector<Y_t>& pose_data) const {
@@ -61,15 +65,23 @@ std::vector<TriangulationEstimator::M_t> TriangulationEstimator::Estimate(
   if (point_data.size() == 2) {
     // Two-view triangulation.
 
-    const M_t xyz = TriangulatePoint(
-        pose_data[0].proj_matrix, pose_data[1].proj_matrix,
-        point_data[0].point_normalized, point_data[1].point_normalized);
+    const M_t xyz =
+        TriangulatePoint(pose_data[0].proj_matrix, pose_data[1].proj_matrix,
+                         point_data[0].point_normalized,
+                         point_data[1].point_normalized, sphere_camera_);
 
-    if (HasPointPositiveDepth(pose_data[0].proj_matrix, xyz) &&
-        HasPointPositiveDepth(pose_data[1].proj_matrix, xyz) &&
-        CalculateTriangulationAngle(pose_data[0].proj_center,
-                                    pose_data[1].proj_center,
-                                    xyz) >= min_tri_angle_) {
+    const bool cheirality_test =
+        sphere_camera_
+            ? (HasPointPositiveDirection(pose_data[0].proj_matrix, xyz,
+                                         point_data[0].point_normalized) &&
+               HasPointPositiveDirection(pose_data[1].proj_matrix, xyz,
+                                         point_data[0].point_normalized))
+            : (HasPointPositiveDepth(pose_data[0].proj_matrix, xyz) &&
+               HasPointPositiveDepth(pose_data[1].proj_matrix, xyz));
+
+    if (cheirality_test && CalculateTriangulationAngle(pose_data[0].proj_center,
+                                                       pose_data[1].proj_center,
+                                                       xyz) >= min_tri_angle_) {
       return std::vector<M_t>{xyz};
     }
   } else {
@@ -84,12 +96,22 @@ std::vector<TriangulationEstimator::M_t> TriangulationEstimator::Estimate(
       points.push_back(point_data[i].point_normalized);
     }
 
-    const M_t xyz = TriangulateMultiViewPoint(proj_matrices, points);
+    const M_t xyz =
+        TriangulateMultiViewPoint(proj_matrices, points, sphere_camera_);
 
     // Check for cheirality constraint.
-    for (const auto& pose : pose_data) {
-      if (!HasPointPositiveDepth(pose.proj_matrix, xyz)) {
-        return std::vector<M_t>();
+    if (sphere_camera_) {
+      for (size_t i = 0; i < pose_data.size(); ++i) {
+        if (!HasPointPositiveDirection(pose_data[i].proj_matrix, xyz,
+                                       point_data[i].point_normalized)) {
+          return std::vector<M_t>();
+        }
+      }
+    } else {
+      for (const auto& pose : pose_data) {
+        if (!HasPointPositiveDepth(pose.proj_matrix, xyz)) {
+          return std::vector<M_t>();
+        }
       }
     }
 
@@ -123,7 +145,8 @@ void TriangulationEstimator::Residuals(const std::vector<X_t>& point_data,
           *pose_data[i].camera);
     } else if (residual_type_ == ResidualType::ANGULAR_ERROR) {
       const double angular_error = CalculateNormalizedAngularError(
-          point_data[i].point_normalized, xyz, pose_data[i].proj_matrix);
+          point_data[i].point_normalized, xyz, pose_data[i].proj_matrix,
+          sphere_camera_);
       (*residuals)[i] = angular_error * angular_error;
     }
   }
@@ -133,7 +156,8 @@ bool EstimateTriangulation(
     const EstimateTriangulationOptions& options,
     const std::vector<TriangulationEstimator::PointData>& point_data,
     const std::vector<TriangulationEstimator::PoseData>& pose_data,
-    std::vector<char>* inlier_mask, Eigen::Vector3d* xyz) {
+    std::vector<char>* inlier_mask, Eigen::Vector3d* xyz,
+    const bool sphere_camera) {
   CHECK_NOTNULL(inlier_mask);
   CHECK_NOTNULL(xyz);
   CHECK_GE(point_data.size(), 2);
@@ -146,8 +170,10 @@ bool EstimateTriangulation(
       ransac(options.ransac_options);
   ransac.estimator.SetMinTriAngle(options.min_tri_angle);
   ransac.estimator.SetResidualType(options.residual_type);
+  ransac.estimator.SetSphereCamera(sphere_camera);
   ransac.local_estimator.SetMinTriAngle(options.min_tri_angle);
   ransac.local_estimator.SetResidualType(options.residual_type);
+  ransac.local_estimator.SetSphereCamera(sphere_camera);
   const auto report = ransac.Estimate(point_data, pose_data);
   if (!report.success) {
     return false;

@@ -32,6 +32,7 @@
 #include "base/projection.h"
 
 #include "base/pose.h"
+#include "base/sphere_camera.h"
 #include "util/matrix.h"
 
 namespace colmap {
@@ -113,37 +114,42 @@ double CalculateSquaredReprojectionError(const Eigen::Vector2d& point2D,
                                          const Eigen::Vector4d& qvec,
                                          const Eigen::Vector3d& tvec,
                                          const Camera& camera) {
-  const Eigen::Vector3d proj_point3D =
-      QuaternionRotatePoint(qvec, point3D) + tvec;
-
-  // Check that point is infront of camera.
-  if (proj_point3D.z() < std::numeric_limits<double>::epsilon()) {
-    return std::numeric_limits<double>::max();
-  }
-
-  const Eigen::Vector2d proj_point2D =
-      camera.WorldToImage(proj_point3D.hnormalized());
-
-  return (proj_point2D - point2D).squaredNorm();
+  const Eigen::Matrix3x4d proj_matrix = ComposeProjectionMatrix(qvec, tvec);
+  return CalculateSquaredReprojectionError(point2D, point3D, proj_matrix,
+                                           camera);
 }
 
 double CalculateSquaredReprojectionError(const Eigen::Vector2d& point2D,
                                          const Eigen::Vector3d& point3D,
                                          const Eigen::Matrix3x4d& proj_matrix,
                                          const Camera& camera) {
-  const double proj_z = proj_matrix.row(2).dot(point3D.homogeneous());
+  const Eigen::Vector3d proj_point3D = proj_matrix * point3D.homogeneous();
 
-  // Check that point is infront of camera.
-  if (proj_z < std::numeric_limits<double>::epsilon()) {
-    return std::numeric_limits<double>::max();
+  Eigen::Vector2d proj_point2D;
+
+  if (camera.IsSpherical()) {
+    // Check that point direction is consistent with bearing.
+    Eigen::Vector3d bearing_point2D =
+        NormalizedPointToBearingVector(camera.ImageToWorld(point2D));
+
+    if (proj_point3D.dot(bearing_point2D) <
+        std::numeric_limits<double>::epsilon()) {
+      return std::numeric_limits<double>::max();
+    }
+
+    Eigen::Vector2d normalized_point3D =
+        BearingVectorToNormalizedPoint(proj_point3D);
+
+    proj_point2D = camera.WorldToImage(normalized_point3D);
+
+  } else {
+    // Check that point is in front of camera.
+    if (proj_point3D.z() < std::numeric_limits<double>::epsilon()) {
+      return std::numeric_limits<double>::max();
+    }
+
+    proj_point2D = camera.WorldToImage(proj_point3D.hnormalized());
   }
-
-  const double proj_x = proj_matrix.row(0).dot(point3D.homogeneous());
-  const double proj_y = proj_matrix.row(1).dot(point3D.homogeneous());
-  const double inv_proj_z = 1.0 / proj_z;
-
-  const Eigen::Vector2d proj_point2D = camera.WorldToImage(
-      Eigen::Vector2d(inv_proj_z * proj_x, inv_proj_z * proj_y));
 
   return (proj_point2D - point2D).squaredNorm();
 }
@@ -154,7 +160,7 @@ double CalculateAngularError(const Eigen::Vector2d& point2D,
                              const Eigen::Vector3d& tvec,
                              const Camera& camera) {
   return CalculateNormalizedAngularError(camera.ImageToWorld(point2D), point3D,
-                                         qvec, tvec);
+                                         qvec, tvec, camera.IsSpherical());
 }
 
 double CalculateAngularError(const Eigen::Vector2d& point2D,
@@ -162,22 +168,28 @@ double CalculateAngularError(const Eigen::Vector2d& point2D,
                              const Eigen::Matrix3x4d& proj_matrix,
                              const Camera& camera) {
   return CalculateNormalizedAngularError(camera.ImageToWorld(point2D), point3D,
-                                         proj_matrix);
+                                         proj_matrix, camera.IsSpherical());
 }
 
 double CalculateNormalizedAngularError(const Eigen::Vector2d& point2D,
                                        const Eigen::Vector3d& point3D,
                                        const Eigen::Vector4d& qvec,
-                                       const Eigen::Vector3d& tvec) {
-  const Eigen::Vector3d ray1 = point2D.homogeneous();
+                                       const Eigen::Vector3d& tvec,
+                                       const bool sphere_camera) {
+  const Eigen::Vector3d ray1 = sphere_camera
+                                   ? NormalizedPointToBearingVector(point2D)
+                                   : point2D.homogeneous();
   const Eigen::Vector3d ray2 = QuaternionRotatePoint(qvec, point3D) + tvec;
   return std::acos(ray1.normalized().transpose() * ray2.normalized());
 }
 
 double CalculateNormalizedAngularError(const Eigen::Vector2d& point2D,
                                        const Eigen::Vector3d& point3D,
-                                       const Eigen::Matrix3x4d& proj_matrix) {
-  const Eigen::Vector3d ray1 = point2D.homogeneous();
+                                       const Eigen::Matrix3x4d& proj_matrix,
+                                       const bool sphere_camera) {
+  const Eigen::Vector3d ray1 = sphere_camera
+                                   ? NormalizedPointToBearingVector(point2D)
+                                   : point2D.homogeneous();
   const Eigen::Vector3d ray2 = proj_matrix * point3D.homogeneous();
   return std::acos(ray1.normalized().transpose() * ray2.normalized());
 }
@@ -191,6 +203,14 @@ double CalculateDepth(const Eigen::Matrix3x4d& proj_matrix,
 bool HasPointPositiveDepth(const Eigen::Matrix3x4d& proj_matrix,
                            const Eigen::Vector3d& point3D) {
   return proj_matrix.row(2).dot(point3D.homogeneous()) >=
+         std::numeric_limits<double>::epsilon();
+}
+
+bool HasPointPositiveDirection(const Eigen::Matrix3x4d& proj_matrix,
+                               const Eigen::Vector3d& point3D,
+                               const Eigen::Vector2d& point2D) {
+  const Eigen::Vector3d bearing = NormalizedPointToBearingVector(point2D);
+  return bearing.dot(proj_matrix * point3D.homogeneous()) >=
          std::numeric_limits<double>::epsilon();
 }
 

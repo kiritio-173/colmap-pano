@@ -78,6 +78,34 @@ namespace colmap {
 // the upper left pixel center has coordinate (0.5, 0.5) and the lower right
 // pixel center has the coordinate (width - 0.5, height - 0.5).
 
+// Camera type that associates with the camera, including perspective, fish-eye
+// and spherical. Camera type is determined by the underlying camera model.
+enum CameraType {
+  // Unknown camera.
+  CameraType_UNKNOWN = -1,
+  // Perspective camera.
+  CameraType_PERSPECTIVE = 0,
+  // Fish-eye camera.
+  CameraType_FISHEYE = 1,
+  // Spherical camera.
+  CameraType_SPHERICAL = 2
+};
+
+static const std::map<int, CameraType> kCameraType = {
+    {0, CameraType::CameraType_PERSPECTIVE},   // SimplePinholeCameraModel
+    {1, CameraType::CameraType_PERSPECTIVE},   // PinholeCameraModel
+    {2, CameraType::CameraType_PERSPECTIVE},   // SimpleRadialCameraModel
+    {3, CameraType::CameraType_PERSPECTIVE},   // RadialCameraModel
+    {4, CameraType::CameraType_PERSPECTIVE},   // OpenCVCameraModel
+    {5, CameraType::CameraType_FISHEYE},       // OpenCVFisheyeCameraModel
+    {6, CameraType::CameraType_PERSPECTIVE},   // FullOpenCVCameraModel
+    {7, CameraType::CameraType_PERSPECTIVE},   // FOVCameraModel
+    {8, CameraType::CameraType_FISHEYE},       // SimpleRadialFisheyeCameraModel
+    {9, CameraType::CameraType_FISHEYE},       // RadialFisheyeCameraModel
+    {10, CameraType::CameraType_FISHEYE},      // ThinPrismFisheyeCameraModel
+    {11, CameraType::CameraType_SPHERICAL}     // SphereCameraModel
+};
+
 static const int kInvalidCameraModelId = -1;
 
 #ifndef CAMERA_MODEL_DEFINITIONS
@@ -126,7 +154,8 @@ static const int kInvalidCameraModelId = -1;
   CAMERA_MODEL_CASE(OpenCVFisheyeCameraModel)       \
   CAMERA_MODEL_CASE(FullOpenCVCameraModel)          \
   CAMERA_MODEL_CASE(FOVCameraModel)                 \
-  CAMERA_MODEL_CASE(ThinPrismFisheyeCameraModel)
+  CAMERA_MODEL_CASE(ThinPrismFisheyeCameraModel)    \
+  CAMERA_MODEL_CASE(SphereCameraModel)
 #endif
 
 #ifndef CAMERA_MODEL_SWITCH_CASES
@@ -349,6 +378,24 @@ struct ThinPrismFisheyeCameraModel
   CAMERA_MODEL_DEFINITIONS(10, "THIN_PRISM_FISHEYE", 12)
 };
 
+// Spherical camera model used for street view images.
+//
+// This model is used for 360 degree panoramic images, e.g., RICOH THETA.
+// The focal length is fixed as one.
+//
+// Parameter list is expected in the following order:
+//
+//   f, cx, cy
+//
+// See:
+// Torii A, Havlena M, Pajdla T.From google street view to 3d city models[C]
+// 2009 IEEE 12th international conference on computer vision workshops,
+// ICCV Workshops. IEEE, 2009: 2188-2195.
+//
+struct SphereCameraModel : public BaseCameraModel<SphereCameraModel> {
+  CAMERA_MODEL_DEFINITIONS(11, "SPHERE", 3)
+};
+
 // Check whether camera model with given name or identifier exists.
 bool ExistsCameraModelWithName(const std::string& model_name);
 bool ExistsCameraModelWithId(const int model_id);
@@ -499,8 +546,9 @@ bool BaseCameraModel<CameraModel>::HasBogusFocalLength(
 
   for (const auto& idx : CameraModel::focal_length_idxs) {
     const T focal_length_ratio = params[idx] / max_size;
-    if (focal_length_ratio < min_focal_length_ratio ||
-        focal_length_ratio > max_focal_length_ratio) {
+    if (CameraModel::model_name != "SPHERE" &&
+        (focal_length_ratio < min_focal_length_ratio ||
+         focal_length_ratio > max_focal_length_ratio)) {
       return true;
     }
   }
@@ -576,7 +624,7 @@ void BaseCameraModel<CameraModel>::IterativeUndistortion(const T* params, T* u,
     J(0, 1) = (dx_1f(0) - dx_1b(0)) / (2 * step1);
     J(1, 0) = (dx_0f(1) - dx_0b(1)) / (2 * step0);
     J(1, 1) = 1 + (dx_1f(1) - dx_1b(1)) / (2 * step1);
-    const Eigen::Vector2d step_x = J.inverse() * (x + dx - x0);
+    const Eigen::Vector2d step_x = J.partialPivLu().solve(x + dx - x0);
     x -= step_x;
     if (step_x.squaredNorm() < kMaxStepNorm) {
       break;
@@ -1477,6 +1525,69 @@ void ThinPrismFisheyeCameraModel::Distortion(const T* extra_params, const T u,
   const T radial = k1 * r2 + k2 * r4 + k3 * r6 + k4 * r8;
   *du = u * radial + T(2) * p1 * uv + p2 * (r2 + T(2) * u2) + sx1 * r2;
   *dv = v * radial + T(2) * p2 * uv + p1 * (r2 + T(2) * v2) + sy1 * r2;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// SphereCameraModel
+
+std::string SphereCameraModel::InitializeParamsInfo() { return "f, cx, cy"; }
+
+std::vector<size_t> SphereCameraModel::InitializeFocalLengthIdxs() {
+  return {0};
+}
+
+std::vector<size_t> SphereCameraModel::InitializePrincipalPointIdxs() {
+  return {1, 2};
+}
+
+std::vector<size_t> SphereCameraModel::InitializeExtraParamsIdxs() {
+  return {};
+}
+
+std::vector<double> SphereCameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {/*focal_length*/ 1.0, width / 2.0, height / 2.0};
+}
+
+template <typename T>
+void SphereCameraModel::WorldToImage(const T* params, const T u, const T v,
+                                     T* x, T* y) {
+  // const T f = params[0];
+  const T c1 = params[1];
+  const T c2 = params[2];
+
+  const T w = T(2) * c1;
+  const T h = T(2) * c2;
+  const T size = std::max<T>(w, h);
+
+  // No Distortion
+
+  *x = u * size + c1;
+  *y = v * size + c2;
+}
+
+template <typename T>
+void SphereCameraModel::ImageToWorld(const T* params, const T x, const T y,
+                                     T* u, T* v) {
+  // const T f = params[0];
+  const T c1 = params[1];
+  const T c2 = params[2];
+
+  const T w = T(2) * c1;
+  const T h = T(2) * c2;
+  const T size = std::max<T>(w, h);
+
+  // No Distortion
+
+  *u = (x - c1) / size;
+  *v = (y - c2) / size;
+}
+
+template <typename T>
+void SphereCameraModel::Distortion(const T* extra_params, const T u, const T v,
+                                   T* du, T* dv) {
+  *du = 0.0;
+  *dv = 0.0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

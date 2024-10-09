@@ -76,6 +76,7 @@ SIFTExtractionWidget::SIFTExtractionWidget(QWidget* parent,
                                            OptionManager* options)
     : ExtractionWidget(parent, options) {
   AddOptionDirPath(&options->image_reader->mask_path, "mask_path");
+  AddOptionFilePath(&options->image_reader->pose_path, "pose_path");
   AddOptionFilePath(&options->image_reader->camera_mask_path,
                     "camera_mask_path");
 

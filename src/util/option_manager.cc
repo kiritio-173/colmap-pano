@@ -234,6 +234,8 @@ void OptionManager::AddExtractionOptions() {
 
   AddAndRegisterDefaultOption("ImageReader.mask_path",
                               &image_reader->mask_path);
+  AddAndRegisterDefaultOption("ImageReader.pose_path",
+                              &image_reader->pose_path);
   AddAndRegisterDefaultOption("ImageReader.camera_model",
                               &image_reader->camera_model);
   AddAndRegisterDefaultOption("ImageReader.single_camera",
@@ -543,6 +545,7 @@ void OptionManager::AddMapperOptions() {
                               &mapper->snapshot_images_freq);
   AddAndRegisterDefaultOption("Mapper.fix_existing_images",
                               &mapper->fix_existing_images);
+  AddAndRegisterDefaultOption("Mapper.sphere_camera", &mapper->sphere_camera);
 
   // IncrementalMapper.
   AddAndRegisterDefaultOption("Mapper.init_min_num_inliers",

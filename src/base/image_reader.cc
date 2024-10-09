@@ -32,6 +32,7 @@
 #include "base/image_reader.h"
 
 #include "base/camera_models.h"
+#include "base/pose_provider.h"
 #include "util/misc.h"
 
 namespace colmap {
@@ -141,8 +142,7 @@ ImageReader::Status ImageReader::Next(Camera* camera, Image* image,
 
   if (mask && !options_.mask_path.empty()) {
     const std::string mask_path =
-        JoinPaths(options_.mask_path,
-                  image->Name() + ".png");
+        JoinPaths(options_.mask_path, image->Name() + ".png");
     if (ExistsFile(mask_path) && !mask->Read(mask_path, false)) {
       // NOTE: Maybe introduce a separate error type MASK_ERROR?
       return Status::BITMAP_ERROR;
@@ -244,19 +244,29 @@ ImageReader::Status ImageReader::Next(Camera* camera, Image* image,
     // Extract GPS data.
     //////////////////////////////////////////////////////////////////////////////
 
-    if (!bitmap->ExifLatitude(&image->TvecPrior(0)) ||
-        !bitmap->ExifLongitude(&image->TvecPrior(1)) ||
-        !bitmap->ExifAltitude(&image->TvecPrior(2))) {
-      image->TvecPrior().setConstant(std::numeric_limits<double>::quiet_NaN());
+    if (!options_.pose_path.empty() && ExistsFile(options_.pose_path)) {
+      PoseProvider pose_provider(options_.pose_path);
+      if (pose_provider.ExistsPose(image->Name())) {
+        PoseItem pose_item = pose_provider.Pose(image->Name());
+        image->QvecPrior() = pose_item.q_vec_;
+        image->TvecPrior() = pose_item.t_vec_;
+      }
+    } else {
+      if (!bitmap->ExifLatitude(&image->TvecPrior(0)) ||
+          !bitmap->ExifLongitude(&image->TvecPrior(1)) ||
+          !bitmap->ExifAltitude(&image->TvecPrior(2))) {
+        image->TvecPrior().setConstant(
+            std::numeric_limits<double>::quiet_NaN());
+      }
     }
+
+    *camera = prev_camera_;
+
+    image_folders_.insert(image_folder);
+    prev_image_folder_ = image_folder;
+
+    return Status::SUCCESS;
   }
-
-  *camera = prev_camera_;
-
-  image_folders_.insert(image_folder);
-  prev_image_folder_ = image_folder;
-
-  return Status::SUCCESS;
 }
 
 size_t ImageReader::NextIndex() const { return image_index_; }

@@ -33,19 +33,36 @@
 
 #include "base/essential_matrix.h"
 #include "base/pose.h"
+#include "base/sphere_camera.h"
 
 namespace colmap {
 
 Eigen::Vector3d TriangulatePoint(const Eigen::Matrix3x4d& proj_matrix1,
                                  const Eigen::Matrix3x4d& proj_matrix2,
                                  const Eigen::Vector2d& point1,
-                                 const Eigen::Vector2d& point2) {
+                                 const Eigen::Vector2d& point2,
+                                 const bool sphere_camera) {
   Eigen::Matrix4d A;
 
-  A.row(0) = point1(0) * proj_matrix1.row(2) - proj_matrix1.row(0);
-  A.row(1) = point1(1) * proj_matrix1.row(2) - proj_matrix1.row(1);
-  A.row(2) = point2(0) * proj_matrix2.row(2) - proj_matrix2.row(0);
-  A.row(3) = point2(1) * proj_matrix2.row(2) - proj_matrix2.row(1);
+  if (sphere_camera) {
+    // Convert normalized point to bearing vector.
+    Eigen::Vector3d bearing1 = NormalizedPointToBearingVector(point1);
+    Eigen::Vector3d bearing2 = NormalizedPointToBearingVector(point2);
+
+    A.row(0) =
+        bearing1(0) * proj_matrix1.row(2) - bearing1(2) * proj_matrix1.row(0);
+    A.row(1) =
+        bearing1(1) * proj_matrix1.row(2) - bearing1(2) * proj_matrix1.row(1);
+    A.row(2) =
+        bearing2(0) * proj_matrix2.row(2) - bearing2(2) * proj_matrix2.row(0);
+    A.row(3) =
+        bearing2(1) * proj_matrix2.row(2) - bearing2(2) * proj_matrix2.row(1);
+  } else {
+    A.row(0) = point1(0) * proj_matrix1.row(2) - proj_matrix1.row(0);
+    A.row(1) = point1(1) * proj_matrix1.row(2) - proj_matrix1.row(1);
+    A.row(2) = point2(0) * proj_matrix2.row(2) - proj_matrix2.row(0);
+    A.row(3) = point2(1) * proj_matrix2.row(2) - proj_matrix2.row(1);
+  }
 
   Eigen::JacobiSVD<Eigen::Matrix4d> svd(A, Eigen::ComputeFullV);
 
@@ -56,14 +73,14 @@ std::vector<Eigen::Vector3d> TriangulatePoints(
     const Eigen::Matrix3x4d& proj_matrix1,
     const Eigen::Matrix3x4d& proj_matrix2,
     const std::vector<Eigen::Vector2d>& points1,
-    const std::vector<Eigen::Vector2d>& points2) {
+    const std::vector<Eigen::Vector2d>& points2, const bool sphere_camera) {
   CHECK_EQ(points1.size(), points2.size());
 
   std::vector<Eigen::Vector3d> points3D(points1.size());
 
   for (size_t i = 0; i < points3D.size(); ++i) {
-    points3D[i] =
-        TriangulatePoint(proj_matrix1, proj_matrix2, points1[i], points2[i]);
+    points3D[i] = TriangulatePoint(proj_matrix1, proj_matrix2, points1[i],
+                                   points2[i], sphere_camera);
   }
 
   return points3D;
@@ -71,16 +88,29 @@ std::vector<Eigen::Vector3d> TriangulatePoints(
 
 Eigen::Vector3d TriangulateMultiViewPoint(
     const std::vector<Eigen::Matrix3x4d>& proj_matrices,
-    const std::vector<Eigen::Vector2d>& points) {
+    const std::vector<Eigen::Vector2d>& points, const bool sphere_camera) {
   CHECK_EQ(proj_matrices.size(), points.size());
 
   Eigen::Matrix4d A = Eigen::Matrix4d::Zero();
 
-  for (size_t i = 0; i < points.size(); i++) {
-    const Eigen::Vector3d point = points[i].homogeneous().normalized();
-    const Eigen::Matrix3x4d term =
-        proj_matrices[i] - point * point.transpose() * proj_matrices[i];
-    A += term.transpose() * term;
+  if (sphere_camera) {
+    // Convert normalized points to bearing vectors.
+    std::vector<Eigen::Vector3d> bearings =
+        NormalizedPointsToBearingVectors(points);
+
+    for (size_t i = 0; i < bearings.size(); i++) {
+      const Eigen::Vector3d bearing = bearings[i].normalized();
+      const Eigen::Matrix3x4d term =
+          proj_matrices[i] - bearing * bearing.transpose() * proj_matrices[i];
+      A += term.transpose() * term;
+    }
+  } else {
+    for (size_t i = 0; i < points.size(); i++) {
+      const Eigen::Vector3d point = points[i].homogeneous().normalized();
+      const Eigen::Matrix3x4d term =
+          proj_matrices[i] - point * point.transpose() * proj_matrices[i];
+      A += term.transpose() * term;
+    }
   }
 
   Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> eigen_solver(A);

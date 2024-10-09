@@ -34,6 +34,7 @@
 
 #include <vector>
 
+#include "base/camera_models.h"
 #include "util/types.h"
 
 namespace colmap {
@@ -55,6 +56,12 @@ class Camera {
   std::string ModelName() const;
   void SetModelId(const int model_id);
   void SetModelIdFromName(const std::string& model_name);
+
+  // Access the camera model type.
+  CameraType ModelType() const;
+  bool IsPerspective() const;
+  bool IsFisheye() const;
+  bool IsSpherical() const;
 
   // Access dimensions of the camera sensor.
   inline size_t Width() const;

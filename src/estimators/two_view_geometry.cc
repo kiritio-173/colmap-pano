@@ -38,6 +38,7 @@
 #include "base/homography_matrix.h"
 #include "base/pose.h"
 #include "base/projection.h"
+#include "base/sphere_camera.h"
 #include "base/triangulation.h"
 #include "estimators/essential_matrix.h"
 #include "estimators/fundamental_matrix.h"
@@ -195,8 +196,10 @@ bool TwoViewGeometry::EstimateRelativePose(
     // configurations. In the uncalibrated case, this most likely leads to a
     // ill-defined reconstruction, but sometimes it succeeds anyways after e.g.
     // subsequent bundle-adjustment etc.
+    const bool sphere_camera = camera1.IsSpherical() && camera2.IsSpherical();
     PoseFromEssentialMatrix(E, inlier_points1_normalized,
-                            inlier_points2_normalized, &R, &tvec, &points3D);
+                            inlier_points2_normalized, &R, &tvec, &points3D,
+                            sphere_camera);
   } else if (config == PLANAR || config == PANORAMIC ||
              config == PLANAR_OR_PANORAMIC) {
     Eigen::Vector3d n;
@@ -237,6 +240,12 @@ void TwoViewGeometry::EstimateCalibrated(
 
   if (matches.size() < options.min_num_inliers) {
     config = ConfigurationType::DEGENERATE;
+    return;
+  }
+
+  if (camera1.IsSpherical() && camera2.IsSpherical()) {
+    EstimateSphericalEssential(camera1, points1, camera2, points2, matches,
+                               options);
     return;
   }
 
@@ -379,6 +388,12 @@ void TwoViewGeometry::EstimateUncalibrated(
     return;
   }
 
+  if (camera1.IsSpherical() && camera2.IsSpherical()) {
+    EstimateSphericalEssential(camera1, points1, camera2, points2, matches,
+                               options);
+    return;
+  }
+
   // Extract corresponding points.
   std::vector<Eigen::Vector2d> matched_points1(matches.size());
   std::vector<Eigen::Vector2d> matched_points2(matches.size());
@@ -438,7 +453,7 @@ void TwoViewGeometry::EstimateUncalibrated(
   }
 
   if (options.compute_relative_pose) {
-      EstimateRelativePose(camera1, points1, camera2, points2);
+    EstimateRelativePose(camera1, points1, camera2, points2);
   }
 }
 
@@ -486,7 +501,66 @@ void TwoViewGeometry::EstimateHomography(
   }
 
   if (options.compute_relative_pose) {
-      EstimateRelativePose(camera1, points1, camera2, points2);
+    EstimateRelativePose(camera1, points1, camera2, points2);
+  }
+}
+
+void TwoViewGeometry::EstimateSphericalEssential(
+    const Camera& camera1, const std::vector<Eigen::Vector2d>& points1,
+    const Camera& camera2, const std::vector<Eigen::Vector2d>& points2,
+    const FeatureMatches& matches, const Options& options) {
+  options.Check();
+
+  if (matches.size() < options.min_num_inliers) {
+    config = ConfigurationType::DEGENERATE;
+    return;
+  }
+
+  // Extract corresponding points.
+  std::vector<Eigen::Vector2d> matched_points1(matches.size());
+  std::vector<Eigen::Vector2d> matched_points2(matches.size());
+  std::vector<Eigen::Vector3d> bearing_vectors1(matches.size());
+  std::vector<Eigen::Vector3d> bearing_vectors2(matches.size());
+  for (size_t i = 0; i < matches.size(); ++i) {
+    matched_points1[i] = points1[matches[i].point2D_idx1];
+    matched_points2[i] = points2[matches[i].point2D_idx2];
+    bearing_vectors1[i] = NormalizedPointToBearingVector(
+        camera1.ImageToWorld(matched_points1[i]));
+    bearing_vectors2[i] = NormalizedPointToBearingVector(
+        camera2.ImageToWorld(matched_points2[i]));
+  }
+
+  // Estimate spherical model.
+  RANSACOptions ransac_options = options.ransac_options;
+  const double sphere_error1 = ImagePlaneToSpherePlaneError(
+      camera1.Width(), camera1.Height(), ransac_options.max_error);
+  const double sphere_error2 = ImagePlaneToSpherePlaneError(
+      camera2.Width(), camera2.Height(), ransac_options.max_error);
+  ransac_options.max_error = std::min(sphere_error1, sphere_error2);
+
+  // NOTICE!
+  // The 8-pt algorithm extracts more inliers than 5-pt with higher efficiency.
+  LORANSAC<SphericalEssentialMatrixEightPointEstimator,
+           SphericalEssentialMatrixEightPointEstimator>
+      E_ransac(ransac_options);
+  const auto E_report = E_ransac.Estimate(bearing_vectors1, bearing_vectors2);
+  E = E_report.model;
+
+  if (!E_report.success ||
+      E_report.support.num_inliers < options.min_num_inliers) {
+    config = ConfigurationType::DEGENERATE;
+    return;
+  } else {
+    config = ConfigurationType::CALIBRATED;
+  }
+
+  inlier_matches = ExtractInlierMatches(matches, E_report.support.num_inliers,
+                                        E_report.inlier_mask);
+  if (options.detect_watermark &&
+      DetectWatermark(camera1, matched_points1, camera2, matched_points2,
+                      E_report.support.num_inliers, E_report.inlier_mask,
+                      options)) {
+    config = ConfigurationType::WATERMARK;
   }
 }
 

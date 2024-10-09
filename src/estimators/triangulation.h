@@ -91,6 +91,7 @@ class TriangulationEstimator {
   // Specify settings for triangulation estimator.
   void SetMinTriAngle(const double min_tri_angle);
   void SetResidualType(const ResidualType residual_type);
+  void SetSphereCamera(const bool sphere_camera);
 
   // The minimum number of samples needed to estimate a model.
   static const int kMinNumSamples = 2;
@@ -118,6 +119,7 @@ class TriangulationEstimator {
  private:
   ResidualType residual_type_ = ResidualType::REPROJECTION_ERROR;
   double min_tri_angle_ = 0.0;
+  bool sphere_camera_ = false;
 };
 
 struct EstimateTriangulationOptions {
@@ -144,7 +146,8 @@ bool EstimateTriangulation(
     const EstimateTriangulationOptions& options,
     const std::vector<TriangulationEstimator::PointData>& point_data,
     const std::vector<TriangulationEstimator::PoseData>& pose_data,
-    std::vector<char>* inlier_mask, Eigen::Vector3d* xyz);
+    std::vector<char>* inlier_mask, Eigen::Vector3d* xyz,
+    const bool sphere_camera = false);
 
 }  // namespace colmap
 
